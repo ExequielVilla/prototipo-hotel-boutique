@@ -2,42 +2,53 @@
    Navegación, roles y estructura general
    ========================================================================== */
 
+/* configuración del prototipo: lo que se muestra y lo que queda desactivado.
+   Para reactivar algo alcanza con cambiar estos valores. */
+const PROTOTIPO = {
+  selectorDeRol: false,          // selector "Vista demo: Administrador / Recepcionista" de la barra superior
+  rol: "Administrador",          // rol con el que se usa el prototipo cuando no hay selector
+  // módulos que se ven en el menú pero muestran "Módulo no incluido en el prototipo"
+  modulosNoIncluidos: ["habitaciones", "huespedes", "reportes", "configuracion"],
+};
+const incluido = (modulo) => !PROTOTIPO.modulosNoIncluidos.includes(modulo);
+
 const MODULOS = [
   { id: "inicio", texto: "Inicio", icono: "house", roles: ["Administrador", "Recepcionista"] },
-  { seccion: "Operación diaria" },
+  { seccion: "Módulos" },
   { id: "reservas", texto: "Reservas", icono: "calendar2-week", roles: ["Administrador", "Recepcionista"] },
   { id: "checkin", texto: "Check-in", icono: "box-arrow-in-right", roles: ["Administrador", "Recepcionista"] },
   { id: "checkout", texto: "Check-out", icono: "box-arrow-right", roles: ["Administrador", "Recepcionista"] },
   { id: "ventas", texto: "Ventas", icono: "bag", roles: ["Administrador", "Recepcionista"] },
-  { seccion: "Gestión" },
   { id: "habitaciones", texto: "Habitaciones", icono: "door-open", roles: ["Administrador", "Recepcionista"] },
   { id: "huespedes", texto: "Huéspedes", icono: "people", roles: ["Administrador", "Recepcionista"] },
-  { id: "productos", texto: "Productos", icono: "box-seam", roles: ["Administrador"] },
   { id: "reportes", texto: "Reportes", icono: "bar-chart-line", roles: ["Administrador"] },
   { id: "configuracion", texto: "Configuración", icono: "gear", roles: ["Administrador"] },
 ];
 
+/* cada vista recibe los parámetros de la ruta; "volver" indica la pantalla
+   desde la que se llegó (por ejemplo, el inicio), a la que se regresa */
 const RUTAS = [
   [/^\/inicio$/, "inicio", () => V.inicio()],
   [/^\/reservas$/, "reservas", () => V.reservas()],
   [/^\/reservas\/nueva$/, "reservas", (m, p) => V.reservaNueva(p)],
-  [/^\/reservas\/(\w+)$/, "reservas", (m) => V.reservaDetalle(m[1])],
+  [/^\/reservas\/(\w+)$/, "reservas", (m, p) => V.reservaDetalle(m[1], p)],
+  [/^\/reservas\/(\w+)\/modificar$/, "reservas", (m, p) => V.reservaModificar(m[1], p)],
   [/^\/checkin$/, "checkin", () => V.checkin()],
-  [/^\/checkin\/(\w+)$/, "checkin", (m) => V.checkinReserva(m[1])],
+  [/^\/checkin\/(\w+)$/, "checkin", (m, p) => V.checkinReserva(m[1], p)],
   [/^\/checkout$/, "checkout", () => V.checkout()],
-  [/^\/checkout\/(\w+)$/, "checkout", (m) => V.checkoutEstadia(m[1])],
-  [/^\/ventas$/, "ventas", () => V.ventas()],
+  [/^\/checkout\/(\w+)$/, "checkout", (m, p) => V.checkoutEstadia(m[1], p)],
+  [/^\/ventas$/, "ventas", (m, p) => V.ventas(p)],
   [/^\/ventas\/nueva$/, "ventas", () => V.ventaNueva()],
   [/^\/ventas\/(\w+)$/, "ventas", (m) => V.ventaDetalle(m[1])],
-  [/^\/habitaciones$/, "habitaciones", () => V.habitaciones()],
+  [/^\/habitaciones$/, "habitaciones", (m, p) => V.habitaciones(p)],
   [/^\/huespedes$/, "huespedes", () => V.huespedes()],
   [/^\/huespedes\/(\w+)$/, "huespedes", (m) => V.huespedHistorial(m[1])],
-  [/^\/productos$/, "productos", () => V.productos()],
+  [/^\/productos$/, "ventas", () => ir("/ventas?tab=productos")],
   [/^\/reportes$/, "reportes", () => V.reportes()],
   [/^\/configuracion$/, "configuracion", () => V.configuracion()],
 ];
 
-const USUARIO_DEMO = { Administrador: "Fernández, Carla", Recepcionista: "Martínez, Sofía" };
+const USUARIO_DEMO = { Administrador: "Castillo, Roberto", Recepcionista: "Rojas, Diego Andrés" };
 
 const App = {
   rol: () => Store.estado.rol,
@@ -45,24 +56,30 @@ const App = {
 
   iniciar() {
     Store.cargar();
-    $("#fecha-hoy").textContent = Fecha.textoLargo(Fecha.hoy());
-    $all("#switch-rol button").forEach((b) => (b.onclick = () => App.cambiarRol(b.dataset.rol)));
-    $("#btn-eventos").onclick = () => App.abrirEventos();
-    $("#lnk-salir").onclick = (e) => { e.preventDefault(); noIncluido("Cerrar sesión"); };
-    $("#lnk-acerca").onclick = (e) => { e.preventDefault(); App.acerca(); };
+    if (PROTOTIPO.selectorDeRol) $all("#switch-rol button").forEach((b) => (b.onclick = () => App.cambiarRol(b.dataset.rol)));
+    else { $("#demo").remove(); Store.estado.rol = PROTOTIPO.rol; }
+    // cualquier enlace a un módulo no incluido avisa en lugar de navegar
+    document.addEventListener("click", (e) => {
+      const a = e.target.closest('a[href^="#/"]');
+      if (a && !incluido(a.getAttribute("href").slice(2).split(/[/?]/)[0])) { e.preventDefault(); App.cerrarMenu(); moduloNoIncluido(); }
+    }, true);
+    $("#lnk-salir").onclick = (e) => { e.preventDefault(); noIncluido(); };
     $("#lnk-reiniciar").onclick = async (e) => {
       e.preventDefault();
+      App.cerrarMenu();
       if (await confirmar("Reiniciar datos de ejemplo", "Se borrarán las reservas, ventas y demás datos cargados durante la prueba, y se volverá al estado inicial.", { boton: "Reiniciar", clase: "btn-danger" })) {
-        Store.reiniciar(); App.actualizarEventos(); toast("Se restauraron los datos de ejemplo."); App.navegar();
+        Store.reiniciar(); toast("Se restauraron los datos de ejemplo."); App.navegar();
       }
     };
     $("#btn-menu").onclick = () => $("#sidebar").classList.toggle("abierta");
+    $("#fondo-menu").onclick = () => App.cerrarMenu();
+    $("#nav").onclick = (e) => { if (e.target.closest("a")) App.cerrarMenu(); };
     window.addEventListener("hashchange", () => App.navegar());
     App.pintarUsuario();
-    App.actualizarEventos();
     if (!location.hash) location.hash = "#/inicio"; else App.navegar();
-    if (!sessionStorage.getItem("bienvenida")) { sessionStorage.setItem("bienvenida", "1"); App.acerca(); }
   },
+
+  cerrarMenu() { $("#sidebar").classList.remove("abierta"); },
 
   pintarUsuario() {
     const rol = App.rol();
@@ -77,7 +94,7 @@ const App = {
     const actual = (location.hash.slice(1).split("/")[1] || "inicio").split("?")[0];
     $("#nav").innerHTML = MODULOS.filter((m) => m.seccion || m.roles.includes(rol)).map((m) => m.seccion
       ? `<div class="seccion">${m.seccion}</div>`
-      : `<a href="#/${m.id}" class="${m.id === actual ? "activo" : ""}"><i class="bi bi-${m.icono}"></i>${m.texto}</a>`).join("");
+      : `<a href="#/${m.id}" class="${m.id === actual ? "activo" : ""} ${incluido(m.id) ? "" : "no-incluido"}"><i class="bi bi-${m.icono}"></i>${m.texto}</a>`).join("");
   },
 
   cambiarRol(rol) {
@@ -91,11 +108,13 @@ const App = {
   navegar() {
     const [ruta, query] = location.hash.slice(1).split("?");
     const params = new URLSearchParams(query || "");
-    $("#sidebar").classList.remove("abierta");
+    App.cerrarMenu();
+    $("#titulo-pagina").innerHTML = "";
     for (const [re, modulo, fn] of RUTAS) {
       const m = re.exec(ruta || "/inicio");
       if (m) {
         App.pintarUsuario();
+        if (!incluido(modulo)) return V.moduloNoIncluido();
         if (!App.permitido(modulo)) return V.sinPermiso();
         window.scrollTo(0, 0);
         try { fn(m, params); } catch (err) { console.error(err); vista().innerHTML = `<div class="alert alert-danger">Ocurrió un error inesperado en el prototipo: ${esc(err.message)}</div>`; }
@@ -106,52 +125,11 @@ const App = {
   },
 
   enlazarNoIncluidos() {
-    $all("[data-no]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); noIncluido(b.dataset.no); }));
+    $all("[data-no]").forEach((b) => (b.onclick = (e) => { e.preventDefault(); noIncluido(); }));
   },
 
-  actualizarEventos() {
-    const e = Store.estado;
-    const nuevos = Math.max(0, e.eventos.length - (e.eventosVistos || 0));
-    const c = $("#contador-eventos");
-    c.textContent = nuevos;
-    c.style.display = nuevos ? "" : "none";
-  },
-
-  abrirEventos() {
-    const e = Store.estado;
-    const iconos = { OTA: "globe2", ARCA: "receipt", Correo: "envelope" };
-    $("#lista-eventos").innerHTML = e.eventos.length ? e.eventos.map((ev, i) => `<div class="evento ${ev.sistema}${i < e.eventos.length - (e.eventosVistos || 0) ? " fw-semibold" : ""}">
-      <div><i class="bi bi-${iconos[ev.sistema] || "dot"} me-1"></i>${esc(ev.mensaje)}</div>
-      <div class="meta">${ev.sistema} · ${Fecha.textoHora(ev.fecha)}</div></div>`).join("") : `<div class="vacio">Sin eventos.</div>`;
-    e.eventosVistos = e.eventos.length;
-    Store.guardar();
-    App.actualizarEventos();
-    bootstrap.Offcanvas.getOrCreateInstance($("#panel-eventos")).show();
-  },
-
-  acerca() {
-    abrirModal({
-      titulo: "Prototipo funcional — Sistema de gestión para un hotel boutique",
-      tamano: "modal-lg",
-      cuerpo: `<p>Este prototipo acompaña el informe del Seminario de Sistemas <i>“Análisis y Diseño de un Sistema de Gestión para un Hotel Boutique”</i> (Proceso Unificado). Permite recorrer los circuitos principales del sistema diseñado:</p>
-        <ul>
-          <li><b>Reservas:</b> búsqueda de disponibilidad, alta de huéspedes, descuentos, pago (efectivo, tarjeta o transferencia, combinables) y registro como confirmada o pendiente de pago; detalle y cancelación.</li>
-          <li><b>Check-in:</b> con reserva o sin reserva, cobro del saldo pendiente y registro de los acompañantes.</li>
-          <li><b>Check-out:</b> cargos adicionales, cobro, emisión de la factura y paso de las habitaciones a limpieza.</li>
-          <li><b>Ventas:</b> venta de productos con control de stock y emisión de la factura.</li>
-        </ul>
-        <p class="mb-2"><b>Para tener en cuenta:</b></p>
-        <ul class="small">
-          <li>El resto de los módulos se muestra para dar una idea del sistema completo, pero sus acciones no están incluidas en el prototipo.</li>
-          <li>Las integraciones con las OTAs (Booking y Expedia), ARCA (factura electrónica) y el correo se <b>simulan</b>: lo que se enviaría se ve en la campana <i class="bi bi-bell"></i>. Las facturas no tienen validez fiscal.</li>
-          <li>El selector <b>Administrador / Recepcionista</b> es solo para la demostración: en el sistema real cada usuario ingresa con su cuenta.</li>
-          <li>Los datos son ficticios y se guardan en este navegador. Se pueden restaurar con <i>Reiniciar datos de ejemplo</i>, en el menú lateral.</li>
-          <li>Para probar el pago con tarjeta podés usar el número de prueba <code>4509 9535 6623 3704</code>, cualquier titular y un vencimiento futuro.</li>
-          <li>Los códigos <span class="codigo-p">P1</span>, <span class="codigo-p">P2</span>, … indican a qué pantalla del diseño estático de la interfaz corresponde cada pantalla.</li>
-        </ul>`,
-      pie: `<button class="btn btn-primary" data-bs-dismiss="modal">Comenzar</button>`,
-    });
-  },
+  // las integraciones simuladas se informan en los mensajes de cada operación
+  actualizarEventos() {},
 };
 
 document.addEventListener("DOMContentLoaded", () => App.iniciar());

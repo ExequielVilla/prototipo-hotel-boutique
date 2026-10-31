@@ -11,8 +11,8 @@ function estadoBadge(estado) {
 }
 
 /* referencia a la pantalla de la tesis (P0, P1, ...), para trazabilidad */
-function codigoP(cod, nombre) {
-  return `<span class="codigo-p" title="Corresponde a la pantalla ${esc(cod)} del diseño (${esc(nombre)})">${esc(cod)}</span>`;
+function codigoP(cod) {
+  return `<span class="codigo-p">[${esc(cod)}]</span>`;
 }
 
 function toast(msg, tipo = "success") {
@@ -27,9 +27,41 @@ function toast(msg, tipo = "success") {
   t.show();
 }
 
+/* tablas: cada celda toma la alineación del encabezado de su columna
+   (texto a la izquierda; fechas, cantidades y estados centrados; importes y acciones a la derecha) */
+function alinearColumnas(raiz) {
+  $all("table", raiz).forEach((tabla) => {
+    const fila = tabla.tHead && tabla.tHead.rows[tabla.tHead.rows.length - 1];
+    if (!fila) return;
+    const alin = [...fila.cells].map((th) => ["text-center", "text-end"].find((c) => th.classList.contains(c)));
+    [...tabla.tBodies, tabla.tFoot].filter(Boolean).forEach((sec) => [...sec.rows].forEach((tr) => {
+      let col = 0;
+      [...tr.cells].forEach((td) => {
+        const tiene = ["text-start", "text-center", "text-end"].some((c) => td.classList.contains(c));
+        if (td.colSpan === 1 && !tiene && alin[col]) td.classList.add(alin[col]);
+        col += td.colSpan;
+      });
+    }));
+  });
+}
+new MutationObserver(() => { alinearColumnas($("#vista")); alinearColumnas($("#modales")); })
+  .observe(document.documentElement, { childList: true, subtree: true });
+
+/* íconos que no tiene Bootstrap Icons */
+const ICONOS = {
+  cama: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
+  limpieza: '<path d="M12 2v9"/><rect x="8" y="11" width="8" height="3" rx="1"/><path d="M8 14 5 22h14l-3-8"/><path d="M10 17.5 9.5 22M14 17.5l.5 4.5"/>',
+};
+function icono(nombre) {
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[nombre]}</svg>`;
+}
+
 /* acciones que forman parte del diseño pero no del prototipo */
-function noIncluido(accion) {
-  toast(`${accion ? "<b>" + esc(accion) + "</b>: " : ""}esta función forma parte del diseño del sistema, pero no está incluida en el prototipo.`, "info");
+function noIncluido() {
+  toast("Funcionalidad no incluida en el prototipo.", "info");
+}
+function moduloNoIncluido() {
+  toast("Módulo no incluido en el prototipo.", "info");
 }
 
 function abrirModal({ titulo, cuerpo, pie = "", tamano = "", alAbrir, alCerrar }) {
@@ -67,6 +99,9 @@ function marcarError(input, msg) {
 }
 function limpiarErrores(raiz) { $all(".is-invalid", raiz).forEach((i) => i.classList.remove("is-invalid")); }
 
+/* medios de pago del prototipo */
+const MEDIO = { efectivo: "Efectivo", transferencia: "Transferencia / link de pago", tarjeta: "Tarjeta" };
+
 /* ------------------------------------------------------------ panel de pago
    CU 4: se invoca desde la reserva, el check-in, el check-out y la venta.
    pagos es un arreglo que se modifica en el lugar.                         */
@@ -76,6 +111,7 @@ class PanelPago {
     this.total = total;
     this.pagos = pagos;
     this.alCambiar = alCambiar || (() => {});
+    this.manual = false;
     this.render();
   }
   get pagado() { return Q.pagado(this.pagos); }
@@ -92,26 +128,34 @@ class PanelPago {
         <div class="card-body">
           ${s > 0 ? `
           <div class="row g-2 align-items-end">
-            <div class="col-md-4"><label class="form-label">Medio de pago</label>
+            <div class="col-sm-5"><label class="form-label">Medio de pago</label>
               <select class="form-select" id="pp-medio">${Q.e.mediosPago.map((m) => `<option>${m}</option>`).join("")}</select></div>
-            <div class="col-md-3"><label class="form-label" id="pp-lbl-monto">Monto a abonar</label>
+            <div class="col-sm-4"><label class="form-label">Monto a abonar</label>
               <div class="input-group"><span class="input-group-text">$</span><input type="number" min="1" class="form-control" id="pp-monto" value="${s}"></div></div>
-            <div class="col-md-5" id="pp-extra"></div>
+            <div class="col-sm-3" data-lugar="${MEDIO.efectivo}"></div>
           </div>
-          <div id="pp-tarjeta" class="row g-2 mt-1 d-none">
-            <div class="col-md-5"><label class="form-label">Número de tarjeta</label><input class="form-control" id="pp-num" placeholder="4509 9535 6623 3704" inputmode="numeric" maxlength="19"></div>
-            <div class="col-md-4"><label class="form-label">Titular</label><input class="form-control" id="pp-titular" placeholder="Como figura en la tarjeta"></div>
-            <div class="col-md-3"><label class="form-label">Vencimiento</label><input class="form-control" id="pp-vto" placeholder="MM/AA" maxlength="5"></div>
+          <div id="pp-transf" class="row g-2 mt-1 align-items-end d-none">
+            <div class="col-sm-9"><label class="form-label">N.º de operación</label><input class="form-control" id="pp-op" placeholder="Figura en el comprobante de la transferencia o del link de pago"></div>
+            <div class="col-sm-3" data-lugar="${MEDIO.transferencia}"></div>
           </div>
-          <div id="pp-transf" class="row g-2 mt-1 d-none">
-            <div class="col-md-6"><label class="form-label">N.º de comprobante de la transferencia</label><input class="form-control" id="pp-comp" placeholder="Ej.: 000498877120"></div>
+          <div id="pp-tarjeta" class="mt-2 d-none">
+            <div class="posnet" id="pp-posnet-caja">
+              <i class="bi bi-credit-card-2-front"></i>
+              <div class="flex-fill"><b>Posnet</b><div class="small text-suave">Se envía el monto al Posnet; el huésped pasa o acerca la tarjeta y, si se lo pide, ingresa su PIN.</div></div>
+              <button class="btn btn-primary text-nowrap" id="pp-posnet">Cobrar con Posnet</button>
+            </div>
+            <button class="btn btn-link btn-sm px-0 mt-1" id="pp-manual">${this.manual ? "Ocultar carga manual" : "Posnet sin conexión: cargar el N.º de autorización del cupón"}</button>
+            <div class="row g-2 align-items-end ${this.manual ? "" : "d-none"}">
+              <div class="col-sm-9"><label class="form-label">N.º de autorización (figura en el cupón del Posnet)</label><input class="form-control" id="pp-aut" inputmode="numeric" maxlength="12"></div>
+              <div class="col-sm-3" data-lugar="${MEDIO.tarjeta}"></div>
+            </div>
           </div>
-          <div class="d-flex justify-content-end mt-3"><button class="btn btn-outline-primary" id="pp-agregar"><i class="bi bi-plus-lg me-1"></i>Agregar pago</button></div>
+          <button class="btn btn-outline-primary w-100" id="pp-agregar"><i class="bi bi-plus-lg me-1"></i>Agregar pago</button>
           <hr>` : ""}
           ${this.pagos.length ? `
           <table class="table table-sm">
-            <thead><tr><th>Medio de pago</th><th>Código</th><th class="text-end">Monto</th><th></th></tr></thead>
-            <tbody>${this.pagos.map((p, i) => `<tr><td>${esc(p.medio)}</td><td class="text-suave">${esc(p.codigo || "—")}</td>
+            <thead><tr><th>Medio de pago</th><th>Código de transacción</th><th class="text-end">Monto</th><th></th></tr></thead>
+            <tbody>${this.pagos.map((p, i) => `<tr><td>${esc(p.medio)}</td><td class="text-suave">${esc(p.codigo) || "—"}</td>
               <td class="text-end">${$$(p.monto)}</td><td class="text-end">${p.nuevo ? `<button class="btn btn-sm btn-link text-danger p-0" data-quitar="${i}" title="Quitar"><i class="bi bi-trash"></i></button>` : ""}</td></tr>`).join("")}</tbody>
           </table>` : `<div class="text-suave small mb-2">Todavía no se cargaron pagos.</div>`}
           <div class="d-flex justify-content-between align-items-center mt-2">
@@ -125,92 +169,79 @@ class PanelPago {
   }
   enlazar() {
     const medio = $("#pp-medio", this.c);
+    if (this.medio) medio.value = this.medio;
     const cambiarMedio = () => {
-      const m = medio.value;
-      $("#pp-tarjeta", this.c).classList.toggle("d-none", !m.startsWith("Tarjeta"));
-      $("#pp-transf", this.c).classList.toggle("d-none", m !== "Transferencia");
-      $("#pp-lbl-monto", this.c).textContent = m === "Efectivo" ? "Monto recibido" : "Monto a abonar";
-      $("#pp-extra", this.c).innerHTML = m === "Tarjeta de crédito"
-        ? `<label class="form-label">Cuotas</label><select class="form-select" id="pp-cuotas"><option>1 cuota</option><option>3 cuotas sin interés</option><option>6 cuotas sin interés</option></select>`
-        : m === "Efectivo" ? `<div class="small text-suave pb-2" id="pp-vuelto"></div>` : "";
-      actualizarVuelto();
-    };
-    const actualizarVuelto = () => {
-      const v = $("#pp-vuelto", this.c);
-      if (!v) return;
-      const recibido = Number($("#pp-monto", this.c).value) || 0;
-      v.innerHTML = recibido > this.saldo ? `Vuelto a entregar: <b>${$$(recibido - this.saldo)}</b>` : "";
+      const m = (this.medio = medio.value);
+      $("#pp-transf", this.c).classList.toggle("d-none", m !== MEDIO.transferencia);
+      $("#pp-tarjeta", this.c).classList.toggle("d-none", m !== MEDIO.tarjeta);
+      // 'Agregar pago' va al final de la última fila de datos del medio elegido;
+      // con tarjeta, el pago lo registra el Posnet (salvo la carga manual del cupón)
+      const btn = $("#pp-agregar", this.c);
+      $(`[data-lugar="${m}"]`, this.c).appendChild(btn);
+      btn.classList.toggle("d-none", m === MEDIO.tarjeta && !this.manual);
     };
     medio.onchange = cambiarMedio;
-    $("#pp-monto", this.c).oninput = actualizarVuelto;
-    $("#pp-num", this.c).oninput = (e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim(); };
-    $("#pp-vto", this.c).oninput = (e) => { let v = e.target.value.replace(/\D/g, "").slice(0, 4); if (v.length > 2) v = v.slice(0, 2) + "/" + v.slice(2); e.target.value = v; };
+    $("#pp-aut", this.c).oninput = (e) => { e.target.value = e.target.value.replace(/\D/g, ""); };
+    $("#pp-manual", this.c).onclick = () => { this.manual = !this.manual; this.render(); };
+    $("#pp-posnet", this.c).onclick = () => this.cobrarConPosnet();
     $("#pp-agregar", this.c).onclick = () => this.agregar();
     cambiarMedio();
   }
-  agregar() {
+  /* CU 4, paso 6: el monto debe ser positivo y no superar el saldo pendiente */
+  montoValido() {
     limpiarErrores(this.c);
+    const input = $("#pp-monto", this.c);
+    const monto = Number(input.value);
+    if (!(monto > 0) || monto > this.saldo) { marcarError(input, "El monto debe ser positivo y no superar el saldo pendiente."); return 0; }
+    return monto;
+  }
+  registrar(medio, monto, codigo) {
+    this.pagos.push({ id: Store.nuevoId("PG"), fecha: Fecha.ahora(), medio, monto, codigo, nuevo: true });
+    this.render();
+    this.alCambiar();
+  }
+  agregar() {
     const medio = $("#pp-medio", this.c).value;
-    const montoIn = $("#pp-monto", this.c);
-    let monto = Number(montoIn.value);
-    if (!monto || monto <= 0) return marcarError(montoIn, "Ingresá un monto mayor a cero.");
+    const monto = this.montoValido();
+    if (!monto) return;
     let codigo = "";
-    let vuelto = 0;
-    if (medio === "Efectivo") {
-      vuelto = Math.max(0, monto - this.saldo);
-      monto = Math.min(monto, this.saldo);
-    } else {
-      if (monto > this.saldo) return marcarError(montoIn, `El monto no puede superar el saldo (${$$(this.saldo)}).`);
-      if (medio.startsWith("Tarjeta")) {
-        const num = $("#pp-num", this.c), tit = $("#pp-titular", this.c), vto = $("#pp-vto", this.c);
-        let ok = true;
-        if (!luhn(num.value.replace(/\s/g, ""))) { marcarError(num, "El número de tarjeta no es válido."); ok = false; }
-        if (!tit.value.trim()) { marcarError(tit, "Ingresá el titular."); ok = false; }
-        if (!vencimientoValido(vto.value)) { marcarError(vto, "Vencimiento inválido o tarjeta vencida."); ok = false; }
-        if (!ok) return;
-        codigo = String(Math.floor(100000 + Math.random() * 900000));
-      }
-      if (medio === "Transferencia") {
-        const comp = $("#pp-comp", this.c);
-        if (comp.value.trim().length < 6) return marcarError(comp, "Ingresá el número de comprobante.");
-        codigo = comp.value.trim();
-      }
+    if (medio === MEDIO.transferencia) {
+      const op = $("#pp-op", this.c);
+      if (op.value.trim().length < 4) return marcarError(op, "Ingresá el número de operación del comprobante.");
+      codigo = op.value.trim();
     }
-    const btn = $("#pp-agregar", this.c);
-    const finalizar = () => {
-      this.pagos.push({ id: Store.nuevoId("PG"), fecha: Fecha.ahora(), medio, monto, codigo, nuevo: true });
-      this.render();
-      this.alCambiar();
-      toast(medio.startsWith("Tarjeta") ? `Pago aprobado. Código de autorización: <b>${codigo}</b>`
-        : `Pago de ${$$(monto)} registrado.${vuelto ? ` Vuelto a entregar: <b>${$$(vuelto)}</b>.` : ""}`);
-    };
-    if (medio.startsWith("Tarjeta")) {
-      btn.disabled = true;
-      btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Procesando…`;
-      setTimeout(finalizar, 900);
-    } else finalizar();
+    if (medio === MEDIO.tarjeta) {
+      const aut = $("#pp-aut", this.c);
+      if (aut.value.length < 4) return marcarError(aut, "Ingresá el número de autorización del cupón.");
+      codigo = aut.value;
+    }
+    this.registrar(medio, monto, codigo);
+    toast(`Pago de ${$$(monto)} registrado (${medio.toLowerCase()}).`);
+  }
+  /* simulación del Posnet integrado: recibe el monto, el huésped pasa la tarjeta
+     y devuelve el resultado con el número de autorización */
+  cobrarConPosnet() {
+    const monto = this.montoValido();
+    if (!monto) return;
+    $("#pp-medio", this.c).disabled = true;
+    $("#pp-monto", this.c).disabled = true;
+    $("#pp-manual", this.c).disabled = true;
+    $("#pp-posnet-caja", this.c).innerHTML = `<span class="spinner-border text-primary" role="status"></span>
+      <div class="flex-fill"><b>Esperando la tarjeta en el Posnet…</b><div class="small text-suave">Monto enviado: ${$$(monto)}. El huésped pasa o acerca la tarjeta.</div></div>`;
+    setTimeout(() => {
+      const tarjeta = ["Visa crédito", "Visa débito", "Mastercard crédito", "Maestro débito"][Math.floor(Math.random() * 4)];
+      const ultimos = String(Math.floor(1000 + Math.random() * 9000));
+      const autorizacion = String(Math.floor(100000 + Math.random() * 900000));
+      this.registrar(MEDIO.tarjeta, monto, autorizacion);
+      toast(`Pago aprobado por el Posnet (${tarjeta} •••• ${ultimos}). N.º de autorización: <b>${autorizacion}</b>`);
+    }, 2000);
   }
 }
 
-function luhn(num) {
-  if (!/^\d{13,19}$/.test(num)) return false;
-  let s = 0, dbl = false;
-  for (let i = num.length - 1; i >= 0; i--) {
-    let d = Number(num[i]);
-    if (dbl) { d *= 2; if (d > 9) d -= 9; }
-    s += d; dbl = !dbl;
-  }
-  return s % 10 === 0;
-}
-function vencimientoValido(v) {
-  const m = /^(\d{2})\/(\d{2})$/.exec(v);
-  if (!m) return false;
-  const mes = Number(m[1]), anio = 2000 + Number(m[2]);
-  if (mes < 1 || mes > 12) return false;
-  const hoy = new Date();
-  return anio > hoy.getFullYear() || (anio === hoy.getFullYear() && mes >= hoy.getMonth() + 1);
-}
 const limpiarPagos = (pagos) => pagos.map(({ nuevo, ...p }) => p);
+/* código de transacción del pago: n.º de operación (transferencia o link de pago) o
+   n.º de autorización del Posnet (tarjeta); el efectivo no tiene */
+const detallePago = (p) => esc(p.codigo || "");
 
 /* ------------------------------------------------------- alta de huésped
    CU 13 (pantalla P28). Devuelve el huésped creado o null.                */
@@ -221,10 +252,10 @@ function modalNuevoHuesped() {
       titulo: `Nuevo huésped ${codigoP("P28", "Nuevo huésped")}`,
       tamano: "modal-lg",
       cuerpo: `<form id="f-huesped" class="row g-3" novalidate>
-        <div class="col-md-8"><label class="form-label obligatorio">Apellido y nombre</label><input class="form-control" name="nombre" placeholder="Apellido, Nombre"></div>
+        <div class="col-md-8"><label class="form-label obligatorio">Apellido y nombre</label><input class="form-control" name="nombre" placeholder="Apellido, Nombres"></div>
         <div class="col-md-4"><label class="form-label obligatorio">Tipo de documento</label><select class="form-select" name="tipoDoc">${Q.e.tiposDoc.map((t) => `<option>${t}</option>`).join("")}</select></div>
         <div class="col-md-4"><label class="form-label obligatorio">N.º de documento</label><input class="form-control" name="nroDoc"></div>
-        <div class="col-md-5"><label class="form-label obligatorio">Email</label><input class="form-control" name="email" type="email"></div>
+        <div class="col-md-5"><label class="form-label">Email</label><input class="form-control" name="email" type="email" placeholder="Opcional"></div>
         <div class="col-md-3"><label class="form-label">Teléfono</label><input class="form-control" name="telefono"></div>
         <div class="col-12"><label class="form-label">Preferencias</label><textarea class="form-control" name="preferencias" rows="2" placeholder="Ej.: planta baja, cama matrimonial, sin almohadas de pluma…"></textarea></div>
       </form>`,
@@ -242,7 +273,10 @@ function modalNuevoHuesped() {
       else if (Q.e.huespedes.some((g) => g.nroDoc.replace(/\D/g, "") === doc.replace(/\D/g, "") && g.tipoDoc === v.tipoDoc)) {
         marcarError(f.nroDoc, "El número de documento ingresado ya existe."); valido = false;
       }
-      if (!/^\S+@\S+\.\S+$/.test(v.email.trim())) { marcarError(f.email, "Ingresá un email válido."); valido = false; }
+      // el email es opcional (un acompañante, por ejemplo un menor, puede no tenerlo)
+      const email = v.email.trim();
+      if (email && !/^\S+@\S+\.\S+$/.test(email)) { marcarError(f.email, "Ingresá un email válido."); valido = false; }
+      else if (email && Q.e.huespedes.some((g) => g.email && g.email.toLowerCase() === email.toLowerCase())) { marcarError(f.email, "El email ingresado ya existe."); valido = false; }
       if (!valido) return;
       creado = { id: Store.nuevoId("G"), nombre: v.nombre.trim(), tipoDoc: v.tipoDoc, nroDoc: doc, email: v.email.trim(), telefono: v.telefono.trim(), preferencias: v.preferencias.trim() };
       Q.e.huespedes.push(creado);
@@ -253,52 +287,121 @@ function modalNuevoHuesped() {
   });
 }
 
-/* ------------------------------------------------------ alta de producto
-   CU 10 (pantalla P10), con la marca del CU 30.                          */
-function modalNuevoProducto() {
+/* ------------------------------------------- alta y modificación de producto
+   CU 10 y CU 11 (pantallas P10 y P11): el mismo formulario, vacío en el alta y
+   con los datos actuales en la modificación. 'Nueva marca' abre en el mismo
+   cuadro el registro de la marca (CU 30, pantalla P31) y vuelve al producto. */
+function modalProducto(producto = null) {
   return new Promise((ok) => {
     let creado = null;
-    const marcas = [...new Set(Q.e.productos.map((p) => p.marca))].sort();
+    const p0 = producto || { marca: "", nombre: "", precio: "", stock: 0, descripcion: "" };
+    const tituloProducto = producto ? `Modificar producto ${codigoP("P11")}` : `Nuevo producto ${codigoP("P10")}`;
+    const textoGuardar = producto ? "Guardar cambios" : "Guardar";
+    const tituloMarca = `Nueva marca ${codigoP("P31", "Nueva marca")}`;
+    const opciones = (sel) => [...Q.e.marcas].sort((a, b) => a.localeCompare(b)).map((x) => `<option ${x === sel ? "selected" : ""}>${esc(x)}</option>`).join("");
     const { el, m } = abrirModal({
-      titulo: `Nuevo producto ${codigoP("P10", "Nuevo producto")}`,
+      titulo: tituloProducto,
       cuerpo: `<form id="f-prod" class="row g-3" novalidate>
         <div class="col-12"><label class="form-label obligatorio">Marca</label>
-          <div class="input-group"><select class="form-select" name="marca">${marcas.map((x) => `<option>${esc(x)}</option>`).join("")}<option value="__nueva">+ Nueva marca…</option></select></div>
-          <input class="form-control mt-2 d-none" name="marcaNueva" placeholder="Nombre de la nueva marca"></div>
-        <div class="col-12"><label class="form-label obligatorio">Nombre comercial</label><input class="form-control" name="nombre"></div>
-        <div class="col-6"><label class="form-label obligatorio">Precio</label><div class="input-group"><span class="input-group-text">$</span><input class="form-control" type="number" min="1" name="precio"></div></div>
-        <div class="col-6"><label class="form-label obligatorio">Stock</label><input class="form-control" type="number" min="0" name="stock" value="0"></div>
+          <div class="d-flex gap-2"><div class="flex-fill"><select class="form-select" name="marca">${opciones(p0.marca)}</select></div>
+            <button type="button" class="btn btn-outline-primary text-nowrap" id="btn-nueva-marca"><i class="bi bi-plus-lg me-1"></i>Nueva marca</button></div></div>
+        <div class="col-12"><label class="form-label obligatorio">Nombre comercial</label><input class="form-control" name="nombre" value="${esc(p0.nombre)}"></div>
+        <div class="col-6"><label class="form-label obligatorio">Precio</label><div class="input-group"><span class="input-group-text">$</span><input class="form-control" type="number" min="1" name="precio" value="${p0.precio}"></div></div>
+        <div class="col-6"><label class="form-label obligatorio">Stock</label><input class="form-control" type="number" min="0" name="stock" value="${p0.stock}"></div>
+        <div class="col-12"><label class="form-label">Descripción</label><textarea class="form-control" name="descripcion" rows="2">${esc(p0.descripcion || "")}</textarea></div>
+      </form>
+      <form id="f-marca" class="row g-3 d-none" novalidate>
+        <div class="col-12"><label class="form-label obligatorio">Nombre de la marca</label><input class="form-control" name="marca"></div>
       </form>`,
-      pie: `<button class="btn btn-light" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="btn-guardar-p">Guardar</button>`,
+      pie: `<button class="btn btn-light" id="btn-cancelar-p">Cancelar</button><button class="btn btn-primary" id="btn-guardar-p">${textoGuardar}</button>`,
       alCerrar: () => ok(creado),
     });
-    const f = $("#f-prod", el);
-    f.marca.onchange = () => f.marcaNueva.classList.toggle("d-none", f.marca.value !== "__nueva");
-    $("#btn-guardar-p", el).onclick = () => {
-      limpiarErrores(f);
-      const marca = f.marca.value === "__nueva" ? f.marcaNueva.value.trim() : f.marca.value;
-      let valido = true;
-      if (!marca) { marcarError(f.marcaNueva, "Ingresá la marca."); valido = false; }
-      if (!f.nombre.value.trim()) { marcarError(f.nombre, "Ingresá el nombre."); valido = false; }
-      if (!(Number(f.precio.value) > 0)) { marcarError(f.precio, "Ingresá un precio válido."); valido = false; }
-      if (!(Number(f.stock.value) >= 0)) { marcarError(f.stock, "Ingresá el stock."); valido = false; }
-      if (!valido) return;
-      creado = { id: Store.nuevoId("PR"), nombre: f.nombre.value.trim(), marca, precio: Number(f.precio.value), stock: Number(f.stock.value) };
-      Q.e.productos.push(creado);
+    const fp = $("#f-prod", el), fm = $("#f-marca", el);
+    let enMarca = false;
+    const mostrar = (marca) => {
+      enMarca = marca;
+      fp.classList.toggle("d-none", marca);
+      fm.classList.toggle("d-none", !marca);
+      $(".modal-title", el).innerHTML = marca ? tituloMarca : tituloProducto;
+      $("#btn-guardar-p", el).textContent = marca ? "Guardar" : textoGuardar;
+      if (marca) { limpiarErrores(fm); fm.marca.value = ""; fm.marca.focus(); }
+    };
+    const guardarMarca = () => {
+      limpiarErrores(fm);
+      const nombre = fm.marca.value.trim();
+      if (!nombre) return marcarError(fm.marca, "Ingresá el nombre de la marca.");
+      if (Q.e.marcas.some((x) => normalizar(x) === normalizar(nombre))) return marcarError(fm.marca, "La marca ya existe.");
+      Q.e.marcas.push(nombre);
       Store.guardar();
-      toast(`Producto <b>${esc(creado.nombre)}</b> registrado.`);
+      toast(`Marca <b>${esc(nombre)}</b> registrada.`);
+      fp.marca.innerHTML = opciones(nombre);
+      mostrar(false);
+    };
+    const guardarProducto = () => {
+      limpiarErrores(fp);
+      const marca = fp.marca.value, nombre = fp.nombre.value.trim();
+      const precio = Number(fp.precio.value), stock = fp.stock.value === "" ? NaN : Number(fp.stock.value);
+      let valido = true;
+      if (!nombre) { marcarError(fp.nombre, "Ingresá el nombre comercial."); valido = false; }
+      else if (Q.e.productos.some((p) => p !== producto && p.activo !== false && p.marca === marca && normalizar(p.nombre) === normalizar(nombre))) { marcarError(fp.nombre, "El producto ya existe."); valido = false; }
+      if (!(precio > 0)) { marcarError(fp.precio, "El precio debe ser positivo."); valido = false; }
+      if (!(stock >= 0)) { marcarError(fp.stock, "El stock no puede ser un valor negativo."); valido = false; }
+      if (!valido) return;
+      const datos = { nombre, marca, precio, stock, descripcion: fp.descripcion.value.trim() };
+      if (producto) {
+        creado = Object.assign(producto, datos);
+        toast(`Producto <b>${esc(nombre)}</b> actualizado.`);
+      } else {
+        creado = { id: Store.nuevoId("PR"), ...datos };
+        Q.e.productos.push(creado);
+        toast(`Producto <b>${esc(nombre)}</b> registrado.`);
+      }
+      Store.guardar();
+      m.hide();
+    };
+    fp.onsubmit = fm.onsubmit = (e) => { e.preventDefault(); enMarca ? guardarMarca() : guardarProducto(); };
+    $("#btn-nueva-marca", el).onclick = () => mostrar(true);
+    $("#btn-cancelar-p", el).onclick = () => (enMarca ? mostrar(false) : m.hide());
+    $("#btn-guardar-p", el).onclick = () => (enMarca ? guardarMarca() : guardarProducto());
+  });
+}
+
+/* ------------------------------------------------------ baja de producto
+   CU de baja (pantalla P12): muestra los datos sin poder cambiarlos; el
+   producto no se borra, queda deshabilitado y deja de mostrarse en las listas. */
+function modalBajaProducto(p) {
+  return new Promise((ok) => {
+    let baja = false;
+    const { el, m } = abrirModal({
+      titulo: `Baja de producto ${codigoP("P12")}`,
+      cuerpo: `<dl class="datos datos-grilla mb-0">
+          <div><dt>Marca</dt><dd>${esc(p.marca)}</dd></div>
+          <div><dt>Nombre comercial</dt><dd>${esc(p.nombre)}</dd></div>
+          <div><dt>Precio</dt><dd>${$$(p.precio)}</dd></div>
+          <div><dt>Stock</dt><dd>${p.stock}</dd></div>
+          <div class="ancho"><dt>Descripción</dt><dd>${esc(p.descripcion) || "—"}</dd></div>
+        </dl>
+        <div class="alert alert-warning small mb-0 mt-2"><i class="bi bi-exclamation-triangle me-1"></i>¿Confirmás la baja? El producto deja de mostrarse en las listas y no se puede vender; sus ventas anteriores se conservan.</div>`,
+      pie: `<button class="btn btn-light" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-danger" id="btn-baja">Dar de baja</button>`,
+      alCerrar: () => ok(baja),
+    });
+    $("#btn-baja", el).onclick = () => {
+      p.activo = false;
+      Store.guardar();
+      toast(`Producto <b>${esc(p.nombre)}</b> dado de baja.`, "warning");
+      baja = true;
       m.hide();
     };
   });
 }
 
 /* --------------------------------------------------- alta de cargo adicional
-   CU 25 (pantalla P38).                                                   */
+   CU 25 (pantalla P37).                                                   */
 function modalNuevoCargo() {
   return new Promise((ok) => {
     let creado = null;
     const { el, m } = abrirModal({
-      titulo: `Nuevo cargo adicional ${codigoP("P38", "Nuevo cargo adicional")}`,
+      titulo: `Nuevo cargo adicional ${codigoP("P37", "Nuevo cargo adicional")}`,
       cuerpo: `<form id="f-cargo" class="row g-3" novalidate>
         <div class="col-12"><label class="form-label obligatorio">Nombre</label><input class="form-control" name="nombre" placeholder="Ej.: Toalla dañada"></div>
         <div class="col-6"><label class="form-label obligatorio">Monto</label><div class="input-group"><span class="input-group-text">$</span><input class="form-control" type="number" min="1" name="monto"></div></div>
@@ -311,6 +414,7 @@ function modalNuevoCargo() {
       limpiarErrores(f);
       let valido = true;
       if (!f.nombre.value.trim()) { marcarError(f.nombre, "Ingresá el nombre."); valido = false; }
+      else if (Q.e.cargos.some((c) => normalizar(c.nombre) === normalizar(f.nombre.value.trim()))) { marcarError(f.nombre, "El cargo adicional ya existe."); valido = false; }
       if (!(Number(f.monto.value) > 0)) { marcarError(f.monto, "Ingresá un monto válido."); valido = false; }
       if (!valido) return;
       creado = { id: Store.nuevoId("C"), nombre: f.nombre.value.trim(), monto: Number(f.monto.value) };
@@ -340,13 +444,13 @@ function verFactura(facturaId) {
         <div><div class="fw-bold fs-6">FACTURA</div><div>N.º ${nro}</div><div>Fecha: ${Fecha.textoHora(f.fecha)}</div><div>CUIT: ${esc(h.cuit)}</div></div>
       </div>
       <div class="mt-2"><b>Cliente:</b> ${esc(g ? g.nombre : "Consumidor final")} — ${esc(g ? g.tipoDoc + " " + g.nroDoc : "")} · Consumidor final</div>
-      <table><thead><tr><th>Descripción</th><th class="text-end">Cant.</th><th class="text-end">Precio unit.</th><th class="text-end">Subtotal</th></tr></thead>
-      <tbody>${f.items.map((i) => `<tr><td>${esc(i.descripcion)}</td><td class="text-end">${i.cantidad}</td><td class="text-end">${$$(i.precioUnitario)}</td><td class="text-end">${$$(i.subtotal)}</td></tr>`).join("")}</tbody>
+      <table><thead><tr><th>Descripción</th><th class="text-center">Cant.</th><th class="text-end">Precio unit.</th><th class="text-end">Subtotal</th></tr></thead>
+      <tbody>${f.items.map((i) => `<tr><td>${esc(i.descripcion)}</td><td class="text-center">${i.cantidad}</td><td class="text-end">${$$(i.precioUnitario)}</td><td class="text-end">${$$(i.subtotal)}</td></tr>`).join("")}</tbody>
       <tfoot><tr><th colspan="3" class="text-end">Total</th><th class="text-end">${$$(f.total)}</th></tr></tfoot></table>
       <div class="cae"><span><b>CAE:</b> ${esc(f.cae)}</span><span><b>Vto. CAE:</b> ${Fecha.texto(f.vtoCae)}</span></div>
-      <div class="marca-agua">Comprobante de demostración generado por el prototipo — sin validez fiscal.</div>
+      <div class="marca-agua">Comprobante de demostración para el prototipo.</div>
     </div>`,
-    pie: `<span class="me-auto small text-suave"><i class="bi bi-envelope-check me-1"></i>Enviada a ${esc(g ? g.email : "")}</span>
+    pie: `<span class="me-auto small text-suave">${g && g.email ? `<i class="bi bi-envelope-check me-1"></i>Enviada a ${esc(g.email)}` : `<i class="bi bi-envelope-slash me-1"></i>No enviada: el huésped no tiene email`}</span>
       <button class="btn btn-light" onclick="window.print()"><i class="bi bi-printer me-1"></i>Imprimir</button>
       <button class="btn btn-primary" data-bs-dismiss="modal">Cerrar</button>`,
   });

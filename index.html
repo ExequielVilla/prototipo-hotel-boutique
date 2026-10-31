@@ -8,7 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="css/styles.css?v=2" rel="stylesheet">
+  <link href="css/styles.css?v=52" rel="stylesheet">
 </head>
 <body>
   <div class="app">
@@ -17,36 +17,32 @@
         <span class="logo"><i class="bi bi-buildings"></i></span>
         <div><strong>Hotel Boutique</strong></div>
       </div>
-      <small class="text-center d-block" style="margin-top:-8px;padding-bottom:8px;color:#7d8798;font-size:11.5px">Sistema de gestión</small>
+      <small class="text-center d-block" style="margin-top:-8px;padding-bottom:8px;color:#7d8798;font-size:11.5px">Sistema de gestión interna</small>
       <nav id="nav"></nav>
       <div class="pie">
-        <a href="#" id="lnk-acerca"><i class="bi bi-info-circle me-1"></i>Acerca del prototipo</a><br>
         <a href="#" id="lnk-reiniciar"><i class="bi bi-arrow-counterclockwise me-1"></i>Reiniciar datos de ejemplo</a>
       </div>
     </aside>
+    <div class="fondo-menu" id="fondo-menu"></div>
 
     <div class="contenido">
       <header class="topbar">
-        <button class="btn btn-light btn-sm solo-movil" id="btn-menu"><i class="bi bi-list"></i></button>
-        <div class="fecha" id="fecha-hoy"></div>
-        <div class="ms-auto"></div>
-        <div class="demo" title="Solo para la demostración: en el sistema real cada usuario ingresa con su cuenta y rol.">
-          <i class="bi bi-eye"></i><span class="d-none d-md-inline">Vista de demostración:</span>
+        <button class="btn btn-light btn-sm solo-movil" id="btn-menu" aria-label="Menú"><i class="bi bi-list"></i></button>
+        <h1 class="titulo-pagina me-auto" id="titulo-pagina"></h1>
+        <div class="demo" id="demo">
+          <i class="bi bi-eye"></i><span class="d-none d-md-inline">Vista demo:</span>
           <div class="btn-group" role="group" id="switch-rol">
             <button class="btn btn-sm" data-rol="Administrador">Administrador</button>
             <button class="btn btn-sm" data-rol="Recepcionista">Recepcionista</button>
           </div>
         </div>
-        <button class="campana" id="btn-eventos" title="Integraciones simuladas (OTAs, ARCA, correo)">
-          <i class="bi bi-bell"></i><span class="contador" id="contador-eventos">0</span>
-        </button>
         <div class="usuario">
           <div class="avatar" id="avatar"></div>
           <div class="d-none d-md-block lh-sm">
             <div class="fw-semibold" id="usuario-nombre"></div>
             <small class="text-suave" id="usuario-rol"></small>
           </div>
-          <a href="#" class="ms-2 text-suave" id="lnk-salir" title="Cerrar sesión"><i class="bi bi-box-arrow-right fs-5"></i></a>
+          <a href="#" class="ms-2 text-suave" id="lnk-salir" aria-label="Cerrar sesión"><i class="bi bi-box-arrow-right fs-5"></i></a>
         </div>
       </header>
       <main class="vista" id="vista"></main>
@@ -56,21 +52,10 @@
   <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toasts"></div>
   <div id="modales"></div>
 
-  <div class="offcanvas offcanvas-end" tabindex="-1" id="panel-eventos">
-    <div class="offcanvas-header border-bottom">
-      <div>
-        <h5 class="offcanvas-title mb-0">Integraciones simuladas</h5>
-        <small class="text-suave">Lo que el sistema enviaría a las OTAs, a ARCA y por correo electrónico.</small>
-      </div>
-      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
-    </div>
-    <div class="offcanvas-body" id="lista-eventos"></div>
-  </div>
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/data.js?v=2"></script>
-  <script src="js/ui.js?v=2"></script>
-  <script src="js/vistas.js?v=2"></script>
-  <script src="js/app.js?v=2"></script>
+  <script src="js/data.js?v=52"></script>
+  <script src="js/ui.js?v=52"></script>
+  <script src="js/vistas.js?v=52"></script>
+  <script src="js/app.js?v=52"></script>
 </body>
 </html>
